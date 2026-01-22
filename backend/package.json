@@ -1,0 +1,11 @@
+{
+  "name": "secure-file-sharing-backend",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "test:crypto": "node src/test/cryptoTest.js",
+    "test:file": "node src/test/cryptoFileTest.js"
+  },
+  "dependencies": {}
+}
