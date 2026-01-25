@@ -1,5 +1,5 @@
 
-console.log("✅ adaptiveAES.js LOADED (file-based version)");
+console.log(" adaptiveAES.js LOADED (file-based version)");
 
 function chooseAESKeyLength(sensitivity, fileSizeBytes) {
     console.log("DEBUG adaptive input => sensitivity:", sensitivity, "fileSizeBytes:", fileSizeBytes);
