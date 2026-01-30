@@ -1,40 +1,20 @@
 const crypto = require("crypto");
-const { rsaDecryptAESKey } = require("./rsa");
-const { sha256Hex } = require("./hash");
+const fs = require("fs");
 
+module.exports.decryptFile = function (inputPath, outputPath, meta) {
+  const decipher = crypto.createDecipheriv(
+    meta.algo,
+    meta.key,
+    meta.iv
+  );
 
-function decryptFile({
-  ciphertext,
-  metadata,
-  hashes,
-  receiverPrivateKeyPem
-}) {
-  if (!Buffer.isBuffer(ciphertext)) throw new Error("ciphertext must be a Buffer");
+  decipher.setAuthTag(meta.tag);
 
+  const encrypted = fs.readFileSync(inputPath);
+  const decrypted = Buffer.concat([
+    decipher.update(encrypted),
+    decipher.final(),
+  ]);
 
-  const actualH1 = sha256Hex(ciphertext);
-  if (actualH1 !== hashes.H1) {
-    throw new Error("TAMPER DETECTED: H1 mismatch (ciphertext modified)");
-  }
-
-
-  const actualH2 = sha256Hex(JSON.stringify(metadata));
-  if (actualH2 !== hashes.H2) {
-    throw new Error("TAMPER DETECTED: H2 mismatch (metadata modified)");
-  }
-
-  const aesAlg = metadata.aesAlg;
-  const iv = Buffer.from(metadata.iv, "base64");
-  const authTag = Buffer.from(metadata.authTag, "base64");
-  const encAESKey = Buffer.from(metadata.encryptedAESKey, "base64");
-
-  const aesKey = rsaDecryptAESKey(encAESKey, receiverPrivateKeyPem);
-
-  const decipher = crypto.createDecipheriv(aesAlg, aesKey, iv);
-  decipher.setAuthTag(authTag);
-
-  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-  return plaintext;
-}
-
-module.exports = { decryptFile };
+  fs.writeFileSync(outputPath, decrypted);
+};

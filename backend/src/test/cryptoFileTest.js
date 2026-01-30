@@ -1,73 +1,127 @@
-const fs = require("fs");
 const path = require("path");
+const fs = require("fs");
+const { v4: uuidv4 } = require("uuid");
 
-const { generateRSAKeyPair } = require("../crypto/rsa");
+const callML = require("../ml/callML");
 const { encryptFile } = require("../crypto/encryptor");
 const { decryptFile } = require("../crypto/decryptor");
+const { sha256File } = require("../crypto/hash");
+const {
+  generateKeyPair,
+  encryptAESKey,
+  decryptAESKey,
+} = require("../crypto/rsa");
 
-function main() {
-  console.log("=== REAL FILE ENCRYPT/DECRYPT TEST (PURE FILE-BASED AES) ===");
+const  connectDB  = require("../db/mongo");
+const FileMetadata = require("../db/FileMetadata");
 
+(async () => {
+  /* 🔹 Dynamic import for ESM-only Helia IPFS client */
+  const { uploadToIPFS, downloadFromIPFS } =
+    await import("../ipfs/ipfsClient.mjs");
 
-  const userArgPath = process.argv[2];
+  /* 🔹 Connect to MongoDB */
+  await connectDB();
 
-  if (!userArgPath) {
-    console.log(" No input file provided.");
-    console.log(" Example usage:");
-    console.log("   npm run test:file -- temp/aes128_test.txt");
-    console.log("   npm run test:file -- temp/aes192_2mb.bin");
-    console.log("   npm run test:file -- temp/aes256_20mb.bin");
-    process.exit(1);
-  }
+  const inputFile = path.resolve(process.argv[2]);
+  const dir = path.dirname(inputFile);
+  const name = path.basename(inputFile);
 
-  const receiverKeys = generateRSAKeyPair();
-
-  const inputFile = path.resolve(process.cwd(), userArgPath);
-
-  const parsed = path.parse(inputFile);
-  const outputFile = path.join(parsed.dir, `decrypted_${parsed.base}`);
-
-  if (!fs.existsSync(inputFile)) {
-    console.log(" Input file not found:", inputFile);
-    process.exit(1);
-  }
-
-  const fileBuffer = fs.readFileSync(inputFile);
+  console.log("\n=== ML + RSA + DUAL HASH + IPFS + DB TEST ===");
   console.log("Input file:", inputFile);
-  console.log("Input file size:", fileBuffer.length, "bytes");
+  console.log("Size:", fs.statSync(inputFile).size, "bytes");
 
-  const enc = encryptFile({
-    fileBuffer,
-    senderId: "sender_01",
-    receiverId: "receiver_01",
-    receiverPublicKeyPem: receiverKeys.publicKeyPem
+  /* 1️⃣ Plaintext hash */
+  const plainHash = sha256File(inputFile);
+  console.log("📄 Plaintext Hash:", plainHash);
+
+  /* 2️⃣ ML-based sensitivity */
+  const sensitivity = await callML(inputFile);
+  console.log("🔐 ML-Predicted Sensitivity:", sensitivity);
+
+  /* 3️⃣ Generate RSA keys (demo user) */
+  const { publicKey, privateKey } = generateKeyPair();
+
+  /* 4️⃣ AES encrypt */
+  const encryptedPath = path.join(dir, `encrypted_${name}`);
+  const decryptedPath = path.join(dir, `decrypted_${name}`);
+
+  const meta = encryptFile(inputFile, encryptedPath, sensitivity);
+  console.log("AES Used:", meta.algo);
+
+  /* 5️⃣ Ciphertext hash */
+  const cipherHash = sha256File(encryptedPath);
+  console.log("📦 Ciphertext Hash:", cipherHash);
+
+  /* 6️⃣ RSA wrap AES key */
+  const wrappedAESKey = encryptAESKey(meta.key, publicKey);
+  console.log("🔑 AES key wrapped with RSA");
+
+  delete meta.key; // never keep plaintext AES key
+
+  /* 7️⃣ Upload encrypted file to IPFS */
+  const cid = await uploadToIPFS(encryptedPath);
+  console.log("🌐 Uploaded to IPFS | CID:", cid);
+
+  /* 8️⃣ Persist metadata to DB */
+  const fileId = uuidv4();
+
+  const record = new FileMetadata({
+    fileId,
+    originalName: name,
+    cid,
+
+    crypto: {
+      algo: meta.algo,
+      iv: meta.iv.toString("base64"),
+      authTag: meta.tag.toString("base64"),
+      wrappedAESKey: wrappedAESKey.toString("base64"),
+    },
+
+    hashes: {
+      plaintext: plainHash,
+      ciphertext: cipherHash,
+    },
+
+    sensitivity,
+    owner: "demo-user",
   });
 
-  console.log("AES used:", enc.metadata.aesAlg);
-  console.log("H1:", enc.hashes.H1);
-  console.log("H2:", enc.hashes.H2);
+  await record.save();
+  console.log("📦 Metadata saved to DB | FileID:", fileId);
 
- 
-  const decryptedBuffer = decryptFile({
-    ciphertext: enc.ciphertext,
-    metadata: enc.metadata,
-    hashes: enc.hashes,
-    receiverPrivateKeyPem: receiverKeys.privateKeyPem
-  });
+  /* ===== Simulated download phase ===== */
 
-  
-  fs.writeFileSync(outputFile, decryptedBuffer);
-  console.log(" Decrypted file saved as:", outputFile);
+  const downloadedEncryptedPath = path.join(
+    dir,
+    `ipfs_${name}.enc`
+  );
 
-  const original = fs.readFileSync(inputFile);
-  const decrypted = fs.readFileSync(outputFile);
+  /* 9️⃣ Download encrypted file from IPFS */
+  await downloadFromIPFS(cid, downloadedEncryptedPath);
+  console.log("⬇️ Downloaded from IPFS");
 
-  const same = Buffer.compare(original, decrypted) === 0;
-  console.log("Match (byte-by-byte):", same ? "TRUE" : "FALSE");
-
-  if (!same) {
-    console.log(" Something is wrong: output file differs from original");
+  /* 🔟 Verify ciphertext integrity */
+  const verifyCipherHash = sha256File(downloadedEncryptedPath);
+  if (verifyCipherHash !== cipherHash) {
+    throw new Error("❌ Encrypted file tampered on IPFS");
   }
-}
+  console.log("✅ Ciphertext hash verified");
 
-main();
+  /* 1️⃣1️⃣ RSA unwrap AES key */
+  meta.key = decryptAESKey(
+    Buffer.from(record.crypto.wrappedAESKey, "base64"),
+    privateKey
+  );
+
+  /* 1️⃣2️⃣ AES decrypt */
+  decryptFile(downloadedEncryptedPath, decryptedPath, meta);
+
+  /* 1️⃣3️⃣ Verify plaintext integrity */
+  const finalPlainHash = sha256File(decryptedPath);
+  console.log("Decrypted file:", decryptedPath);
+  console.log(
+    "Match:",
+    finalPlainHash === plainHash ? "✅ TRUE" : "❌ FALSE"
+  );
+})();

@@ -1,7 +1,5 @@
 const crypto = require("crypto");
+const fs = require("fs");
 
-function sha256Hex(bufferOrString) {
-  return crypto.createHash("sha256").update(bufferOrString).digest("hex");
-}
-
-module.exports = { sha256Hex };
+module.exports.sha256File = (path) =>
+  crypto.createHash("sha256").update(fs.readFileSync(path)).digest("hex");

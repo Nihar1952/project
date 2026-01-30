@@ -1,0 +1,5 @@
+Confidential Medical Record
+Patient Name: John Doe
+Diagnosis: Type II Diabetes
+Prescribed medication and treatment plan are confidential.
+Unauthorized access to this document is prohibited.

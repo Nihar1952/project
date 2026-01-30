@@ -1,0 +1,5 @@
+Banking and Financial Information
+Account Holder: Jane Smith
+Bank Account Number: XXXX-XXXX-1234
+IFSC Code: ABCD0123456
+This information is strictly private and confidential.

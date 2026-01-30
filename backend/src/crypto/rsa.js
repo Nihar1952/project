@@ -1,42 +1,40 @@
 const crypto = require("crypto");
 
-
-function generateRSAKeyPair() {
-  const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", {
+/**
+ * Generate RSA key pair (for testing / demo)
+ */
+module.exports.generateKeyPair = () => {
+  return crypto.generateKeyPairSync("rsa", {
     modulusLength: 2048,
-    publicKeyEncoding: { type: "spki", format: "pem" },
-    privateKeyEncoding: { type: "pkcs8", format: "pem" }
+    publicKeyEncoding: { type: "pkcs1", format: "pem" },
+    privateKeyEncoding: { type: "pkcs1", format: "pem" },
   });
+};
 
-  return { publicKeyPem: publicKey, privateKeyPem: privateKey };
-}
-
-
-function rsaEncryptAESKey(aesKeyBuffer, receiverPublicKeyPem) {
+/**
+ * Encrypt (wrap) AES key using RSA public key
+ */
+module.exports.encryptAESKey = (aesKey, publicKey) => {
   return crypto.publicEncrypt(
     {
-      key: receiverPublicKeyPem,
+      key: publicKey,
       padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-      oaepHash: "sha256"
+      oaepHash: "sha256",
     },
-    aesKeyBuffer
-  ); 
-}
+    aesKey
+  );
+};
 
-
-function rsaDecryptAESKey(encryptedAESKeyBuffer, receiverPrivateKeyPem) {
+/**
+ * Decrypt (unwrap) AES key using RSA private key
+ */
+module.exports.decryptAESKey = (encryptedKey, privateKey) => {
   return crypto.privateDecrypt(
     {
-      key: receiverPrivateKeyPem,
+      key: privateKey,
       padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-      oaepHash: "sha256"
+      oaepHash: "sha256",
     },
-    encryptedAESKeyBuffer
-  ); 
-}
-
-module.exports = {
-  generateRSAKeyPair,
-  rsaEncryptAESKey,
-  rsaDecryptAESKey
+    encryptedKey
+  );
 };

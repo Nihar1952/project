@@ -1,0 +1,5 @@
+Employee Resume
+Name: Rahul Sharma
+Skills: Java, Python, SQL
+Previous Experience includes software development projects.
+This resume is intended for internal HR review only.
