@@ -1,18 +1,25 @@
 const express = require("express");
-const { connectDB } = require("./db/mongo");
+const cors = require("cors");
 
-const uploadRoute = require("./api/upload");
-const downloadRoute = require("./api/download");
+const connectDB = require("./db/mongo");
+
+const authRoutes = require("./auth");
+const uploadRoutes = require("./api/upload");
+const downloadRoutes = require("./api/download");
 
 const app = express();
+const PORT = 3000;
+
+app.use(cors());
 app.use(express.json());
 
-app.use("/upload", uploadRoute);
-app.use("/download", downloadRoute);
+app.use("/auth", authRoutes);
+app.use("/upload", uploadRoutes);
+app.use("/download", downloadRoutes);
 
 (async () => {
   await connectDB();
-  app.listen(3000, () =>
-    console.log("🚀 Server running on http://localhost:3000")
-  );
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running at http://localhost:${PORT}`);
+  });
 })();

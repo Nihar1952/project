@@ -1,72 +1,79 @@
 const express = require("express");
 const multer = require("multer");
-const path = require("path");
 const { v4: uuidv4 } = require("uuid");
+
+const auth = require("../auth/middleware");
 
 const callML = require("../ml/callML");
 const { encryptFile } = require("../crypto/encryptor");
 const { sha256File } = require("../crypto/hash");
-const { generateKeyPair, encryptAESKey } = require("../crypto/rsa");
-const FileMetadata = require("../db/FileMetadata");
+const { encryptAESKey } = require("../crypto/rsa");
+
+const FileMetadata = require("../db/FileMetaData");
+const User = require("../db/User");
+const { uploadToIPFS } = require("../ipfs/ipfsClient");
 
 const router = express.Router();
 const upload = multer({ dest: "temp/" });
 
-router.post("/", upload.single("file"), async (req, res) => {
-  const { uploadToIPFS } = await import("../ipfs/ipfsClient.mjs");
+router.post("/", auth, upload.single("file"), async (req, res) => {
+  try {
+    const inputPath = req.file.path;
+    const originalName = req.file.originalname;
+    const recipients = [].concat(req.body.recipients || []);
 
-  const inputPath = req.file.path;
-  const originalName = req.file.originalname;
+    const plainHash = sha256File(inputPath);
+    const sensitivity = await callML(inputPath);
 
-  // 1️⃣ Plain hash
-  const plainHash = sha256File(inputPath);
+    const encryptedPath = `${inputPath}.enc`;
+    const meta = encryptFile(inputPath, encryptedPath, sensitivity);
 
-  // 2️⃣ ML sensitivity
-  const sensitivity = await callML(inputPath);
+    const cipherHash = sha256File(encryptedPath);
+    const wrappedKeys = new Map();
 
-  // 3️⃣ RSA keys (demo)
-  const { publicKey } = generateKeyPair();
+    const owner = await User.findOne({ userId: req.user.userId });
+    wrappedKeys.set(
+      owner.userId,
+      encryptAESKey(meta.key, owner.crypto.publicKey).toString("base64")
+    );
 
-  // 4️⃣ AES encrypt
-  const encryptedPath = `${inputPath}.enc`;
-  const meta = encryptFile(inputPath, encryptedPath, sensitivity);
+    for (const r of recipients) {
+      const u = await User.findOne({ userId: r });
+      if (!u) continue;
+      wrappedKeys.set(
+        u.userId,
+        encryptAESKey(meta.key, u.crypto.publicKey).toString("base64")
+      );
+    }
 
-  // 5️⃣ Cipher hash
-  const cipherHash = sha256File(encryptedPath);
+    delete meta.key;
 
-  // 6️⃣ RSA wrap AES key
-  const wrappedAESKey = encryptAESKey(meta.key, publicKey);
-  delete meta.key;
+    console.log("⏳ Uploading to IPFS...");
+    const cid = await uploadToIPFS(encryptedPath);
+    console.log("🌐 Uploaded to IPFS | CID:", cid);
 
-  // 7️⃣ Upload to IPFS
-  const cid = await uploadToIPFS(encryptedPath);
+    const fileId = uuidv4();
 
-  // 8️⃣ Store metadata
-  const fileId = uuidv4();
+    await FileMetadata.create({
+      fileId,
+      originalName,
+      owner: owner.userId,
+      cid,
+      crypto: {
+        algo: meta.algo,
+        iv: meta.iv.toString("base64"),
+        authTag: meta.tag.toString("base64"),
+        wrappedKeys,
+      },
+      hashes: { plaintext: plainHash, ciphertext: cipherHash },
+      sensitivity,
+    });
 
-  await FileMetadata.create({
-    fileId,
-    originalName,
-    cid,
-    crypto: {
-      algo: meta.algo,
-      iv: meta.iv.toString("base64"),
-      authTag: meta.tag.toString("base64"),
-      wrappedAESKey: wrappedAESKey.toString("base64"),
-    },
-    hashes: {
-      plaintext: plainHash,
-      ciphertext: cipherHash,
-    },
-    sensitivity,
-    owner: "demo-user",
-  });
-
-  res.json({
-    message: "File uploaded securely",
-    fileId,
-    sensitivity,
-  });
+    res.json({ fileId, cid, sensitivity });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Upload failed" });
+  }
 });
 
 module.exports = router;

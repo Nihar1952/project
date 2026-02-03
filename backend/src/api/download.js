@@ -1,83 +1,63 @@
 const express = require("express");
 const path = require("path");
-const fs = require("fs");
 
-const FileMetadata = require("../db/FileMetadata");
+const auth = require("../auth/middleware");
+
+const FileMetadata = require("../db/FileMetaData");
+const User = require("../db/User");
+
+const { decryptAESKey } = require("../crypto/rsa");
 const { decryptFile } = require("../crypto/decryptor");
 const { sha256File } = require("../crypto/hash");
-const { decryptAESKey } = require("../crypto/rsa");
+const { decryptPrivateKey } = require("../crypto/privateKey");
+
+const { downloadFromIPFS } = require("../ipfs/ipfsClient");
 
 const router = express.Router();
 
-router.get("/:fileId", async (req, res) => {
-  const { fileId } = req.params;
-
+router.post("/:fileId", auth, async (req, res) => {
   try {
-    /* 1️⃣ Fetch metadata from DB */
-    const record = await FileMetadata.findOne({ fileId });
-    if (!record) {
-      return res.status(404).json({ error: "File not found" });
-    }
+    const { password } = req.body;
+    const { fileId } = req.params;
 
-    /* 2️⃣ Download encrypted file from IPFS */
-    const { downloadFromIPFS } = await import("../ipfs/ipfsClient.mjs");
+    const meta = await FileMetadata.findOne({ fileId });
+    const wrappedKey = meta.crypto.wrappedKeys.get(req.user.userId);
 
-    const tempDir = path.join(__dirname, "../../temp");
-    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
+    if (!wrappedKey) return res.status(403).json({ error: "Access denied" });
 
-    const encryptedPath = path.join(tempDir, `${fileId}.enc`);
-    const decryptedPath = path.join(tempDir, record.originalName);
+    const user = await User.findOne({ userId: req.user.userId });
+    const privateKey = decryptPrivateKey(
+  {
+    encryptedPrivateKey: user.crypto.encryptedPrivateKey,
+    salt: user.crypto.salt,
+    iv: user.crypto.iv,
+    tag: user.crypto.tag,
+  },
+  password
+);
 
-    await downloadFromIPFS(record.cid, encryptedPath);
-
-    /* 3️⃣ Verify ciphertext integrity */
-    const cipherHash = sha256File(encryptedPath);
-    if (cipherHash !== record.hashes.ciphertext) {
-      return res.status(400).json({ error: "Encrypted file tampered" });
-    }
-
-    /* 4️⃣ Recover AES key (RSA unwrap) */
-    const wrappedKey = Buffer.from(
-      record.crypto.wrappedAESKey,
-      "base64"
+    const aesKey = decryptAESKey(
+      Buffer.from(wrappedKey, "base64"),
+      privateKey
     );
 
-    // ⚠️ DEMO ASSUMPTION:
-    // In real systems, private key comes from authenticated user
-    const PRIVATE_KEY_PATH = path.join(
-      __dirname,
-      "../../keys/private.pem"
-    );
+    const encPath = path.join("temp", `${fileId}.enc`);
+    await downloadFromIPFS(meta.cid, encPath);
 
-    if (!fs.existsSync(PRIVATE_KEY_PATH)) {
-      return res
-        .status(500)
-        .json({ error: "Private key not found on server" });
-    }
+    if (sha256File(encPath) !== meta.hashes.ciphertext)
+      return res.status(400).json({ error: "Integrity failed" });
 
-    const privateKey = fs.readFileSync(PRIVATE_KEY_PATH, "utf8");
-    const aesKey = decryptAESKey(wrappedKey, privateKey);
-
-    /* 5️⃣ AES decrypt file */
-    const meta = {
-      algo: record.crypto.algo,
-      iv: Buffer.from(record.crypto.iv, "base64"),
-      tag: Buffer.from(record.crypto.authTag, "base64"),
+    const outPath = path.join("temp", meta.originalName);
+    decryptFile(encPath, outPath, {
       key: aesKey,
-    };
+      iv: Buffer.from(meta.crypto.iv, "base64"),
+      tag: Buffer.from(meta.crypto.authTag, "base64"),
+      algo: meta.crypto.algo,
+    });
 
-    decryptFile(encryptedPath, decryptedPath, meta);
-
-    /* 6️⃣ Verify plaintext integrity */
-    const finalHash = sha256File(decryptedPath);
-    if (finalHash !== record.hashes.plaintext) {
-      return res.status(400).json({ error: "File integrity violated" });
-    }
-
-    /* 7️⃣ Send file to client */
-    res.download(decryptedPath, record.originalName);
-  } catch (err) {
-    console.error(err);
+    res.download(outPath);
+  } catch (e) {
+    console.error(e);
     res.status(500).json({ error: "Download failed" });
   }
 });

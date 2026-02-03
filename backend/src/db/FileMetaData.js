@@ -6,11 +6,16 @@ const FileSchema = new mongoose.Schema({
   cid: String,
 
   crypto: {
-    algo: String,
-    iv: String,
-    authTag: String,
-    wrappedAESKey: String,
-  },
+  algo: String,
+  iv: String,
+  authTag: String,
+
+  wrappedKeys: {
+    type: Map,
+    of: String // userId -> wrapped AES key (base64)
+  }
+}
+,
 
   hashes: {
     plaintext: String,
