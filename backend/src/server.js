@@ -6,6 +6,7 @@ const connectDB = require("./db/mongo");
 const authRoutes = require("./auth");
 const uploadRoutes = require("./api/upload");
 const downloadRoutes = require("./api/download");
+const auditRoutes = require("./api/audit");
 
 const app = express();
 const PORT = 3000;
@@ -16,6 +17,7 @@ app.use(express.json());
 app.use("/auth", authRoutes);
 app.use("/upload", uploadRoutes);
 app.use("/download", downloadRoutes);
+app.use("/audit", auditRoutes);
 
 (async () => {
   await connectDB();

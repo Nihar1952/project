@@ -12,6 +12,7 @@ const { sha256File } = require("../crypto/hash");
 const { decryptPrivateKey } = require("../crypto/privateKey");
 
 const { downloadFromIPFS } = require("../ipfs/ipfsClient");
+const { logFileAction } = require("../../services/blockchainService");
 
 const router = express.Router();
 
@@ -54,6 +55,13 @@ router.post("/:fileId", auth, async (req, res) => {
       tag: Buffer.from(meta.crypto.authTag, "base64"),
       algo: meta.crypto.algo,
     });
+
+    await logFileAction(
+      fileId,                 // same fileId from params
+      req.user.userId,        // downloader
+      "DOWNLOAD",             // action
+      meta.cid                // IPFS CID
+    );
 
     res.download(outPath);
   } catch (e) {

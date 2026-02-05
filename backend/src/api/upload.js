@@ -12,6 +12,7 @@ const { encryptAESKey } = require("../crypto/rsa");
 const FileMetadata = require("../db/FileMetaData");
 const User = require("../db/User");
 const { uploadToIPFS } = require("../ipfs/ipfsClient");
+const { logFileAction } = require("../../services/blockchainService");
 
 const router = express.Router();
 const upload = multer({ dest: "temp/" });
@@ -68,7 +69,12 @@ router.post("/", auth, upload.single("file"), async (req, res) => {
       hashes: { plaintext: plainHash, ciphertext: cipherHash },
       sensitivity,
     });
-
+    await logFileAction(
+      fileId,              // same UUID you generated
+      owner.userId,        // uploader
+      "UPLOAD",            // action
+      cid                  // IPFS CID
+    );
     res.json({ fileId, cid, sensitivity });
   } catch (e) {
     console.error(e);
