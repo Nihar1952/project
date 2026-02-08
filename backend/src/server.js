@@ -7,6 +7,7 @@ const authRoutes = require("./auth");
 const uploadRoutes = require("./api/upload");
 const downloadRoutes = require("./api/download");
 const auditRoutes = require("./api/audit");
+const fileRoutes = require("./api/files");
 
 const app = express();
 const PORT = 3000;
@@ -18,6 +19,7 @@ app.use("/auth", authRoutes);
 app.use("/upload", uploadRoutes);
 app.use("/download", downloadRoutes);
 app.use("/audit", auditRoutes);
+app.use("/files", fileRoutes);
 
 (async () => {
   await connectDB();
