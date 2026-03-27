@@ -25,14 +25,14 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Handle 401 - clear token and redirect to login
+// ✅ FIXED: Handle 401 WITHOUT redirect loop
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      // ❌ REMOVED: window.location.href = '/login';
     }
     return Promise.reject(error);
   }

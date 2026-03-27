@@ -1,36 +1,39 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
+import apiClient from '../api/client';
 
 const FileContext = createContext(null);
 
-const STORAGE_KEY = 'secure_files_uploaded';
-
-function loadFromStorage() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveToStorage(files) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
-}
-
 export function FileProvider({ children }) {
-  const [files, setFiles] = useState(loadFromStorage);
+  const [files, setFiles] = useState([]);
 
-  const addFile = useCallback((file) => {
-    setFiles((prev) => {
-      const next = [file, ...prev];
-      saveToStorage(next);
-      return next;
-    });
+  const fetchFiles = async () => {
+    try {
+      const uploaded = await apiClient.get('/files/uploaded-by-me');
+      const shared = await apiClient.get('/files/shared-with-me');
+
+      setFiles([...uploaded.data, ...shared.data]);
+    } catch (err) {
+      console.error('Failed to fetch files', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchFiles();
   }, []);
 
-  const value = { files, addFile };
+  const addFile = (file) => {
+    setFiles((prev) => [file, ...prev]);
+  };
 
-  return <FileContext.Provider value={value}>{children}</FileContext.Provider>;
+  const clearFiles = () => {
+    setFiles([]);
+  };
+
+  return (
+    <FileContext.Provider value={{ files, addFile, fetchFiles, clearFiles }}>
+      {children}
+    </FileContext.Provider>
+  );
 }
 
 export function useFiles() {

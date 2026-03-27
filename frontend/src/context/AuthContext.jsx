@@ -9,6 +9,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const stored = localStorage.getItem('user');
     const token = localStorage.getItem('token');
+
     if (stored && token) {
       try {
         setUser(JSON.parse(stored));
@@ -17,6 +18,7 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('token');
       }
     }
+
     setLoading(false);
   }, []);
 

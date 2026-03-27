@@ -15,11 +15,11 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 
-app.use("/auth", authRoutes);
-app.use("/upload", uploadRoutes);
-app.use("/download", downloadRoutes);
-app.use("/audit", auditRoutes);
-app.use("/files", fileRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/upload", uploadRoutes);
+app.use("/api/download", downloadRoutes);
+app.use("/api/audit", auditRoutes);
+app.use("/api/files", fileRoutes);
 
 (async () => {
   await connectDB();

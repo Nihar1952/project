@@ -4,6 +4,8 @@ const auth = require("../auth/middleware");
 const { ethers } = require("ethers");
 const { contractABI, contractAddress } = require("../../config/blockchain");
 
+const FileMetadata = require("../db/FileMetaData"); // ✅ ADD THIS
+
 const router = express.Router();
 
 // Hardhat / local provider
@@ -23,6 +25,14 @@ const auditContract = new ethers.Contract(
 router.get("/:fileId", auth, async (req, res) => {
   try {
     const { fileId } = req.params;
+    const userId = req.user.userId; // ✅ ADD THIS
+
+    // 🔐 STEP 1: Check access
+    const file = await FileMetadata.findOne({ fileId });
+
+    if (!file || !file.crypto.wrappedKeys.has(userId)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
 
     // Read AuditLogged events from blockchain
     const events = await auditContract.queryFilter("AuditLogged");
