@@ -32,15 +32,23 @@ router.post("/", auth, upload.single("file"), async (req, res) => {
     const cipherHash = sha256File(encryptedPath);
     const wrappedKeys = new Map();
 
+    // 🔐 OWNER KEY
     const owner = await User.findOne({ userId: req.user.userId });
+
     wrappedKeys.set(
       owner.userId,
       encryptAESKey(meta.key, owner.crypto.publicKey).toString("base64")
     );
 
+    // 🔥 FIXED: Use EMAIL for recipients
     for (const r of recipients) {
-      const u = await User.findOne({ userId: r });
-      if (!u) continue;
+      const u = await User.findOne({ email: r }); // ✅ FIX
+
+      if (!u) {
+        console.log("❌ Recipient not found:", r);
+        continue;
+      }
+
       wrappedKeys.set(
         u.userId,
         encryptAESKey(meta.key, u.crypto.publicKey).toString("base64")
@@ -69,13 +77,16 @@ router.post("/", auth, upload.single("file"), async (req, res) => {
       hashes: { plaintext: plainHash, ciphertext: cipherHash },
       sensitivity,
     });
+
     await logFileAction(
-      fileId,              // same UUID you generated
-      owner.userId,        // uploader
-      "UPLOAD",            // action
-      cid                  // IPFS CID
+      fileId,
+      owner.userId,
+      "UPLOAD",
+      cid
     );
+
     res.json({ fileId, cid, sensitivity });
+
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Upload failed" });
